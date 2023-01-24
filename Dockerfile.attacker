@@ -1,0 +1,6 @@
+from python:3
+run apt-get update && apt-get install -y tcpdump iproute2
+run pip install scapy[basic] coloredlogs
+workdir /app
+add attacker/attacker.py /app/attacker.py
+cmd ["python", "/app/attacker.py"]
