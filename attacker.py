@@ -33,7 +33,7 @@ def on_dns_packet(p: Packet) -> None:
     response = sr1(IP(src=p[IP].dst, dst = p[IP].src) 
             / UDP(src=p[UDP].dport, dst=p[UDP].sport)
             / Ether(src=p[Ether].dst, dst=p[Ether].src)
-            / DNS(qr=1, id=p[DNS].id, an=DNSRR() /DNSRR(rdata=("test"))))
+            / DNS(qr=1, id=p[DNS].id, an=DNSRR(rdata=("test"))))
     print("attempting to show packet", flush=True)
     response.show()
     sendp(response, iface=INTERFACE)
