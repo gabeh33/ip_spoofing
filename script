@@ -1,0 +1,3 @@
+sudo docker image rm netsec_arp_attacker
+sudo docker build -t netsec_arp_attacker -f Dockerfile.attacker .
+sudo docker run -it --rm --name=netsec_arp_attacker --network=arp --cap-add=net_raw netsec_arp_attacker
