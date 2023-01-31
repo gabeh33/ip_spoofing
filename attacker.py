@@ -30,13 +30,15 @@ def arp_main(src_hw_addr: str, target_hw_addr: str, gw_hw_addr: str, target_ip_a
 def on_dns_packet(p: Packet) -> None:
     logging.info(f"forwarding DNS request")
     # print(p[DNS])
-    response = sr1(IP(src=p[IP].dst, dst = p[IP].src) 
-            / UDP(src=p[UDP].dport, dst=p[UDP].sport)
-            / Ether(src=p[Ether].dst, dst=p[Ether].src)
-            / DNS(qr=1, id=p[DNS].id, an=DNSRR(rdata=("test"))))
-    print("attempting to show packet", flush=True)
-    response.show()
-    sendp(response, iface=INTERFACE)
+    #if p[DNS].qr == 1:
+
+    if p[DNS].qr == 0:
+        print("packet received: ")
+        #p.show()
+        print("sending packet: ")
+        response = IPv6(src=p[IPv6].dst, dst = p[IPv6].src) / UDP(sport=p[UDP].dport, dport=p[UDP].sport) / Ether(src=p[Ether].dst, dst=p[Ether].src) / DNS(qr=1, aa=0,id=p[DNS].id, an=DNSRR(rdata=("0:0:0:0:0:ffff:ac12:0003")))
+        #response.show()
+        sendp(response, iface=INTERFACE)
 
 def on_http_packet(p: Packet) -> None:
     global http_server_state
@@ -67,9 +69,10 @@ def on_http_packet(p: Packet) -> None:
 
 def on_packet(p: Packet) -> None:
     if TCP in p and p[TCP].dport == 1200:
+        print("getting http packet")
         on_http_packet(p)
-    print("received a packet!")
     if UDP in p and DNS in p:
+        print("getting dns packet")
         on_dns_packet(p)
 
 
